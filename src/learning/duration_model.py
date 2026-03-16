@@ -136,8 +136,8 @@ class StepDurationModel:
             stats.std = self.min_std
             stats.count = 1
         else:
-            stats.mean = alpha * new_val + (1 - alpha) * stats.mean
             deviation = abs(new_val - stats.mean)
+            stats.mean = alpha * new_val + (1 - alpha) * stats.mean
             stats.std = alpha * deviation + (1 - alpha) * stats.std
             stats.std = max(stats.std, self.min_std)
             stats.count += 1

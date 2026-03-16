@@ -106,7 +106,7 @@ class RiskAggregator:
         # Layer 3: Anomaly
         if self.config.use_anomaly:
             assessment.anomaly_score = anomaly_detector.score(current_step, scene_state)
-            assessment.anomaly_flagged = anomaly_detector.is_anomalous(current_step, scene_state)
+            assessment.anomaly_flagged = assessment.anomaly_score > anomaly_detector.anomaly_threshold
 
         # Layer 4: Failure classifier
         if self.config.use_failure:

@@ -23,6 +23,10 @@ class InstructionEngine:
         self.stall_threshold = stall_threshold_frames
         self._frames_since_change = 0
 
+    def reset(self):
+        """Reset state for a new run."""
+        self._frames_since_change = 0
+
     def generate(self, estimate: StepEstimate, state: SceneState) -> Guidance:
         """Generate guidance for the current frame."""
         step = estimate.step

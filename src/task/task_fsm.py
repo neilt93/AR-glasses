@@ -114,7 +114,12 @@ class TaskFSM:
             self._candidate_count = 0
             changed = True
 
-        confidence = min(1.0, self._candidate_count / self.persistence_frames)
+        if changed:
+            confidence = 1.0
+        elif self.persistence_frames > 0:
+            confidence = min(1.0, self._candidate_count / self.persistence_frames)
+        else:
+            confidence = 1.0
         return FSMResult(
             current_step=self.current_step,
             changed=changed,

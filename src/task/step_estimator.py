@@ -43,8 +43,8 @@ class StepEstimator:
     def update(self, state: SceneState) -> StepEstimate:
         result: FSMResult = self._fsm.update(state)
         step = result.current_step
-        step_num = min(int(step), TOTAL_STEPS)
-        progress = (step_num / TOTAL_STEPS) * 100.0
+        step_num = int(step)
+        progress = min(100.0, (step_num / TOTAL_STEPS) * 100.0)
 
         return StepEstimate(
             step=step,

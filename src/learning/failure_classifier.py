@@ -160,12 +160,17 @@ class FailureClassifier:
 
         if self._trained and self._model is not None:
             return self._model_predict(features)
-        return self._heuristic_predict(features, anomaly_score, current_duration, expected_duration)
+        return self._heuristic_predict(features, anomaly_score, current_duration, expected_duration, step_regressions)
 
     def _model_predict(self, features: np.ndarray) -> FailurePrediction:
         """Use the trained model."""
         X = features.reshape(1, -1)
-        risk = float(self._model.predict_proba(X)[0][1])
+        proba = self._model.predict_proba(X)[0]
+        if len(proba) < 2:
+            # Single-class model — predict the only class
+            risk = float(proba[0]) if self._model.classes_[0] == 1 else 0.0
+        else:
+            risk = float(proba[1])
 
         top_features = []
         if hasattr(self._model, "feature_importances_"):
@@ -188,10 +193,11 @@ class FailureClassifier:
         anomaly_score: float,
         current_duration: float,
         expected_duration: float,
+        step_regressions: int = 0,
     ) -> FailurePrediction:
         """Heuristic fallback when no trained model is available.
 
-        Combines duration deviation and anomaly score into a risk estimate.
+        Combines duration deviation, anomaly score, and step regressions.
         """
         risk = 0.0
 
@@ -199,15 +205,21 @@ class FailureClassifier:
         if expected_duration > 0:
             ratio = current_duration / expected_duration
             if ratio > 2.0:
-                risk += 0.4
+                risk += 0.3
             elif ratio > 1.5:
-                risk += 0.2
+                risk += 0.15
 
         # Anomaly factor
         if anomaly_score > 5.0:
-            risk += 0.4
+            risk += 0.3
         elif anomaly_score > 3.0:
-            risk += 0.2
+            risk += 0.15
+
+        # Step regression factor
+        if step_regressions >= 3:
+            risk += 0.3
+        elif step_regressions >= 1:
+            risk += 0.1
 
         risk = min(risk, 1.0)
         return FailurePrediction(risk=risk, top_features=[], confidence=0.3)

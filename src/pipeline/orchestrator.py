@@ -19,7 +19,6 @@ from src.task.step_estimator import StepEstimator
 from src.instructions.engine import InstructionEngine
 from src.hud.renderer import HUDRenderer
 from src.event_log.events import EventLogger
-from src.utils.smoothing import ConfidenceBuffer
 from src.data.records import RunRecord, FrameRecord, RunStore
 from src.learning.duration_model import StepDurationModel
 from src.learning.transition_model import TransitionModel
@@ -99,7 +98,6 @@ class Pipeline:
             task_name=self.config.task_name,
             show_detections=self.config.show_detections,
         )
-        self._confidence_buffer = ConfidenceBuffer(window_size=10)
         self._logger: Optional[EventLogger] = None
 
         # Learning layers
@@ -281,7 +279,7 @@ class Pipeline:
 
                 # Draw risk indicator if learning is active
                 if self._learning_enabled and failure_risk > 0.1:
-                    self._draw_risk_indicator(display, failure_risk, assessment)
+                    self._draw_risk_indicator(display, failure_risk)
 
                 # 9. Log
                 if self._logger is not None:
@@ -336,6 +334,7 @@ class Pipeline:
             )
             self._transition_model.reset_belief()
             self._risk_aggregator.reset()
+        self._instruction_engine.reset()
         self._recent_frames.clear()
         self._step_regressions = 0
         self._prev_step = 0
@@ -352,7 +351,7 @@ class Pipeline:
         self._online_updater.on_run_complete(self._current_run)
         self._current_run = None
 
-    def _draw_risk_indicator(self, frame: np.ndarray, risk: float, assessment):
+    def _draw_risk_indicator(self, frame: np.ndarray, risk: float):
         """Draw a small risk gauge on the HUD."""
         h, w = frame.shape[:2]
         # Risk bar on the right edge

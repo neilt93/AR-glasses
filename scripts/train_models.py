@@ -66,8 +66,12 @@ def main():
     print("\n--- Duration Model ---")
     stats = duration_model.serialize()
     for step, vals in sorted(stats.get("global", {}).items()):
+        min_val = vals.get("min", float("inf"))
+        max_val = vals.get("max", 0)
+        min_str = f"{min_val:.0f}" if min_val != float("inf") else "?"
+        max_str = f"{max_val:.0f}" if max_val else "?"
         print(f"  Step {step}: mean={vals['mean']:.1f} std={vals['std']:.1f} "
-              f"count={vals['count']} range=[{vals.get('min', '?'):.0f}, {vals.get('max', '?'):.0f}]")
+              f"count={vals['count']} range=[{min_str}, {max_str}]")
 
     # Print transition matrix highlights
     print("\n--- Transition Model ---")
