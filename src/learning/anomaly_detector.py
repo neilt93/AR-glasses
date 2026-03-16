@@ -155,6 +155,10 @@ class AnomalyDetector:
             self._buffers[step] = deque(maxlen=self.buffer_size)
         self._buffers[step].append(vec)
 
+    def buffer_sizes(self) -> dict[int, int]:
+        """Return the number of buffered reference states per step."""
+        return {step: len(buf) for step, buf in self._buffers.items()}
+
     def refit_from_buffer(self):
         """Refit Gaussian params from current buffers."""
         for step, buf in self._buffers.items():

@@ -145,6 +145,11 @@ class TransitionModel:
             return False
         return sorted_beliefs[1] > gap_threshold * sorted_beliefs[0]
 
+    @property
+    def transition_matrix(self) -> np.ndarray:
+        """The learned transition probability matrix."""
+        return self._transition_matrix.copy()
+
     def transition_matrix_to_dict(self) -> dict:
         """Serialize transition matrix for storage."""
         return {

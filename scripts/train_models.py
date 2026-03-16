@@ -72,7 +72,7 @@ def main():
     # Print transition matrix highlights
     print("\n--- Transition Model ---")
     import numpy as np
-    matrix = transition_model._transition_matrix
+    matrix = transition_model.transition_matrix
     for i in range(min(10, matrix.shape[0])):
         row = matrix[i]
         top = np.argsort(row)[::-1][:3]
@@ -82,8 +82,8 @@ def main():
 
     # Print anomaly detector status
     print("\n--- Anomaly Detector ---")
-    for step, buf in sorted(anomaly_detector._buffers.items()):
-        print(f"  Step {step}: {len(buf)} reference states buffered")
+    for step, count in sorted(anomaly_detector.buffer_sizes().items()):
+        print(f"  Step {step}: {count} reference states buffered")
 
     # Print failure classifier status
     print("\n--- Failure Classifier ---")
@@ -94,7 +94,7 @@ def main():
         print(f"  Current: {total} runs, {failure} failures")
 
     print("\nModels saved to:", args.model_dir)
-    updater._save_models()
+    updater.save_models()
 
 
 if __name__ == "__main__":

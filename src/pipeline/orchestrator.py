@@ -18,7 +18,7 @@ from src.state.scene_state import SceneStateExtractor
 from src.task.step_estimator import StepEstimator
 from src.instructions.engine import InstructionEngine
 from src.hud.renderer import HUDRenderer
-from src.logging.events import EventLogger
+from src.event_log.events import EventLogger
 from src.utils.smoothing import ConfidenceBuffer
 from src.data.records import RunRecord, FrameRecord, RunStore
 from src.learning.duration_model import StepDurationModel
@@ -133,6 +133,7 @@ class Pipeline:
         self._recent_frames: deque = deque(maxlen=self.config.recent_frames_buffer)
         self._step_regressions = 0
         self._prev_step = 0
+        self._current_step_frames = 0
         self._step_frame_counter: dict[int, int] = {}
 
     def run(self):
@@ -186,16 +187,20 @@ class Pipeline:
                 # 4. Estimate step
                 estimate = self._step_estimator.update(state)
 
-                # Track step regressions
-                if estimate.step_number < self._prev_step:
-                    self._step_regressions += 1
-                self._prev_step = estimate.step_number
-
-                # Count frames per step
+                # Track step regressions and current step duration
                 step_num = estimate.step_number
+                if step_num != self._prev_step:
+                    if step_num < self._prev_step:
+                        self._step_regressions += 1
+                    # Reset current-step frame counter on any step change
+                    self._current_step_frames = 0
+                    self._prev_step = step_num
+                self._current_step_frames += 1
+                current_step_duration = float(self._current_step_frames)
+
+                # Also track total frames per step (for run record)
                 self._step_frame_counter[step_num] = \
                     self._step_frame_counter.get(step_num, 0) + 1
-                current_step_duration = float(self._step_frame_counter[step_num])
 
                 # 5. Generate base guidance
                 guidance = self._instruction_engine.generate(estimate, state)
@@ -334,6 +339,7 @@ class Pipeline:
         self._recent_frames.clear()
         self._step_regressions = 0
         self._prev_step = 0
+        self._current_step_frames = 0
         self._step_frame_counter.clear()
 
     def _finish_run(self, outcome: str, failure_step: Optional[int] = None):

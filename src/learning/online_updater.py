@@ -69,7 +69,7 @@ class OnlineUpdater:
             self._runs_since_classifier_retrain = 0
 
         # Persist model states
-        self._save_models()
+        self.save_models()
 
     def _update_duration(self, run: RunRecord):
         """EMA update of step duration statistics."""
@@ -172,7 +172,7 @@ class OnlineUpdater:
         self.classifier.train(X, y)
         self.classifier.save(os.path.join(self.model_dir, "failure_classifier.pkl"))
 
-    def _save_models(self):
+    def save_models(self):
         """Persist all model states to disk."""
         # Duration model
         duration_data = self.duration.serialize()

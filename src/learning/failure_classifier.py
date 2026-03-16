@@ -12,7 +12,7 @@ from typing import Optional
 
 import numpy as np
 
-from src.learning.anomaly_detector import state_to_vector
+from src.learning.anomaly_detector import state_to_vector, ALL_FEATURES
 
 
 # Lookback windows (in frames) for extracting failure precursor features
@@ -73,9 +73,9 @@ def extract_features(
             vec = state_to_vector(state)
             features.extend(vec.tolist())
         else:
-            features.extend([0.0] * 10)
+            features.extend([0.0] * len(ALL_FEATURES))
     else:
-        features.extend([0.0] * 10)
+        features.extend([0.0] * len(ALL_FEATURES))
 
     # Feature 14+: temporal features from lookback windows
     for window in LOOKBACK_WINDOWS:
