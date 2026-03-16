@@ -13,16 +13,22 @@ Responsibilities:
 - Track objects with persistent IDs across frames
 - Detect hand gestures
 - Estimate depth for spatial reasoning
+- Analyze spatial relationships between objects
+- Generate proactive suggestions
 """
 
 import time
 from typing import Optional
+
+import numpy as np
 
 from src.perception.scene import ScenePerception
 from src.perception.tracker import ObjectTracker, TrackedObject
 from src.perception.hands import HandDetector, HandResult, Gesture
 from src.perception.depth import DepthEstimator, DepthResult
 from src.assistant.voice import VoiceEngine, MockVoiceEngine
+from src.assistant.spatial import SpatialAnalyzer
+from src.assistant.suggestions import SuggestionEngine
 from src.hud.widgets import (
     NotificationStack, InfoPanel, WidgetRenderer, StatusBar,
     ObjectLabels, SceneSummary, Crosshair, TrackedObjectLabels,
@@ -78,6 +84,10 @@ class AssistantBrain:
         # Depth estimator
         self._depth_estimator = DepthEstimator() if enable_depth else None
         self._enable_depth = enable_depth
+
+        # Spatial awareness + suggestions
+        self._spatial = SpatialAnalyzer()
+        self._suggestions = SuggestionEngine()
 
         # Tracking state
         self._known_objects: set[str] = set()
@@ -148,6 +158,11 @@ class AssistantBrain:
         self._check_new_objects(perception)
         self._check_people(perception)
         self._check_scene_change(perception)
+
+        # Proactive suggestions (every 30 frames to save CPU)
+        if self._frame_count % 30 == 0:
+            self._check_suggestions(perception, frame)
+
         self._update_info_panel(perception, tracked, hands, depth)
 
         # Store extra context for widgets
@@ -250,7 +265,28 @@ class AssistantBrain:
                 if self._can_notify(f"scene_{tag}"):
                     self._notify(f"Scene: {tag}", "info", duration=4.0)
                     self.voice.say(f"{tag} detected")
+            self._suggestions.reset_scene_timer()
             self._last_scene_tags = tags
+
+    def _check_suggestions(self, perception: ScenePerception, frame=None):
+        """Generate proactive suggestions based on scene context."""
+        avg_brightness = 128.0
+        if frame is not None:
+            avg_brightness = float(np.mean(frame))
+
+        suggestions = self._suggestions.suggest(
+            object_names=set(perception.object_names),
+            scene_tags=perception.scene_tags,
+            people_count=perception.people_count,
+            prev_people_count=self._known_people_count,
+            prev_tags=self._last_scene_tags,
+            avg_brightness=avg_brightness,
+        )
+
+        for s in suggestions:
+            self._notify(f"Tip: {s.text}", "info", duration=6.0)
+            if s.speak:
+                self.voice.say(s.text)
 
     def _update_info_panel(self, perception: ScenePerception,
                            tracked: list[TrackedObject] | None = None,
@@ -348,6 +384,7 @@ class AssistantBrain:
             self._tracker.reset()
         self._prev_tracked = []
         self._last_gesture = Gesture.UNKNOWN
+        self._suggestions.reset()
 
     def shutdown(self):
         """Clean up resources."""
