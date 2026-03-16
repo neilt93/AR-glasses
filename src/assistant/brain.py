@@ -9,15 +9,22 @@ Responsibilities:
 - Decide when to surface notifications (new object, person, text)
 - Manage contextual info panels
 - Rate-limit updates to avoid flickering
+- Speak important events via voice output
+- Track objects with persistent IDs across frames
+- Detect hand gestures
 """
 
 import time
 from typing import Optional
 
 from src.perception.scene import ScenePerception
+from src.perception.tracker import ObjectTracker, TrackedObject
+from src.perception.hands import HandDetector, HandResult, Gesture
+from src.assistant.voice import VoiceEngine, MockVoiceEngine
 from src.hud.widgets import (
     NotificationStack, InfoPanel, WidgetRenderer, StatusBar,
-    ObjectLabels, SceneSummary, Crosshair,
+    ObjectLabels, SceneSummary, Crosshair, TrackedObjectLabels,
+    HandSkeleton,
 )
 
 
@@ -26,21 +33,46 @@ class AssistantBrain:
 
     Each frame, call `think(perception)` to update the brain's state.
     The brain updates widgets (notifications, info panel) based on
-    what it observes.
+    what it observes. Optionally speaks notifications aloud.
     """
 
     def __init__(
         self,
         renderer: Optional[WidgetRenderer] = None,
-        notification_cooldown: float = 10.0,  # seconds between similar notifications
+        notification_cooldown: float = 10.0,
+        voice: Optional[VoiceEngine | MockVoiceEngine] = None,
+        enable_tracking: bool = True,
+        enable_hands: bool = False,
+        enable_voice: bool = False,
     ):
         # Widgets
-        self.renderer = renderer or self._default_renderer()
+        self.renderer = renderer or self._default_renderer(
+            use_tracking=enable_tracking,
+            use_hands=enable_hands,
+        )
         self._notifications = self.renderer.get(NotificationStack)
         self._info_panel = self.renderer.get(InfoPanel)
 
+        # Voice
+        if voice is not None:
+            self.voice = voice
+        elif enable_voice:
+            self.voice = VoiceEngine()
+        else:
+            self.voice = MockVoiceEngine()
+
+        # Object tracker
+        self._tracker = ObjectTracker() if enable_tracking else None
+        self._prev_tracked: list[TrackedObject] = []
+        self._enable_tracking = enable_tracking
+
+        # Hand detector
+        self._hand_detector = HandDetector() if enable_hands else None
+        self._last_gesture: Gesture = Gesture.UNKNOWN
+        self._enable_hands = enable_hands
+
         # Tracking state
-        self._known_objects: set[str] = set()        # objects we've already notified about
+        self._known_objects: set[str] = set()
         self._known_people_count: int = 0
         self._last_scene_tags: list[str] = []
         self._last_notification_times: dict[str, float] = {}
@@ -49,32 +81,109 @@ class AssistantBrain:
         self._scene_stable_count = 0
         self._last_dominant: list[str] = []
 
-    def _default_renderer(self) -> WidgetRenderer:
+    def _default_renderer(self, use_tracking: bool = False,
+                          use_hands: bool = False) -> WidgetRenderer:
         """Build the default HUD widget stack."""
         renderer = WidgetRenderer()
-        renderer.add(ObjectLabels(z_order=0))
+
+        # Use tracked labels if tracking is enabled
+        if use_tracking:
+            renderer.add(TrackedObjectLabels(z_order=0))
+        else:
+            renderer.add(ObjectLabels(z_order=0))
+
         renderer.add(Crosshair(z_order=1, enabled=False))
+
+        # Hand skeleton
+        if use_hands:
+            renderer.add(HandSkeleton(z_order=2))
+
         renderer.add(StatusBar(z_order=10))
         renderer.add(SceneSummary(z_order=10))
         renderer.add(NotificationStack(z_order=20))
         renderer.add(InfoPanel(position="top-right", z_order=15))
         return renderer
 
-    def think(self, perception: ScenePerception):
-        """Process a frame's perception and update the HUD accordingly."""
+    def think(self, perception: ScenePerception, frame=None):
+        """Process a frame's perception and update the HUD accordingly.
+
+        Args:
+            perception: Scene perception for this frame.
+            frame: Raw frame (needed for hand detection). Optional.
+        """
         self._frame_count += 1
 
-        # Detect new objects entering the scene
+        # Object tracking
+        tracked = None
+        if self._tracker is not None:
+            tracked = self._tracker.update(perception.objects)
+            self._check_track_events(tracked)
+            self._prev_tracked = tracked
+
+        # Hand detection
+        hands = None
+        if self._hand_detector is not None and frame is not None:
+            hands = self._hand_detector.detect(frame)
+            self._check_gestures(hands)
+
+        # Standard brain logic
         self._check_new_objects(perception)
-
-        # Track people
         self._check_people(perception)
-
-        # Track scene changes
         self._check_scene_change(perception)
+        self._update_info_panel(perception, tracked, hands)
 
-        # Update info panel with current scene context
-        self._update_info_panel(perception)
+        # Store extra context for widgets
+        self._last_tracked = tracked
+        self._last_hands = hands
+
+    def get_render_context(self, perception: ScenePerception,
+                           fps: float = 0.0, mode: str = "assistant") -> dict:
+        """Build context dict for widget rendering."""
+        ctx = {
+            "perception": perception,
+            "fps": fps,
+            "mode": mode,
+        }
+        if hasattr(self, '_last_tracked') and self._last_tracked is not None:
+            ctx["tracked_objects"] = self._last_tracked
+        if hasattr(self, '_last_hands') and self._last_hands is not None:
+            ctx["hands"] = self._last_hands
+        return ctx
+
+    def _check_track_events(self, tracked: list[TrackedObject]):
+        """Notify on object enter/exit based on tracking."""
+        if not self._prev_tracked:
+            return
+
+        entered = self._tracker.entered(self._prev_tracked, tracked)
+        exited = self._tracker.exited(self._prev_tracked, tracked)
+
+        for obj in entered:
+            # Don't notify for very new objects (wait a few frames)
+            if obj.frames_seen <= 1:
+                continue
+            if self._can_notify(f"track_enter_{obj.class_name}"):
+                self._notify(f"Tracking: {obj.class_name} #{obj.track_id}", "info")
+
+        for obj in exited:
+            if obj.frames_seen > 5:  # only notify for objects that were around
+                if self._can_notify(f"track_exit_{obj.class_name}"):
+                    self._notify(f"Lost: {obj.class_name} #{obj.track_id}", "info")
+
+    def _check_gestures(self, hands: list[HandResult]):
+        """Notify on gesture changes."""
+        if not hands:
+            if self._last_gesture != Gesture.UNKNOWN:
+                self._last_gesture = Gesture.UNKNOWN
+            return
+
+        # Use first hand's gesture
+        gesture = hands[0].gesture
+        if gesture != self._last_gesture and gesture != Gesture.UNKNOWN:
+            if self._can_notify(f"gesture_{gesture.value}"):
+                self._notify(f"Gesture: {gesture.value}", "info", duration=3.0)
+                self.voice.say(gesture.value)
+            self._last_gesture = gesture
 
     def _check_new_objects(self, perception: ScenePerception):
         """Notify when new object types appear in the scene."""
@@ -86,8 +195,10 @@ class AssistantBrain:
                 count = len(perception.objects_of_class(name))
                 if count > 1:
                     self._notify(f"Detected: {count}x {name}", "info")
+                    self.voice.say(f"I see {count} {name}s")
                 else:
                     self._notify(f"Detected: {name}", "info")
+                    self.voice.say(f"I see a {name}")
 
         # Update known set (but allow re-notification after cooldown)
         self._known_objects = current_names
@@ -100,8 +211,10 @@ class AssistantBrain:
                 if self._can_notify("people_increase"):
                     if count == 1:
                         self._notify("Person detected", "info")
+                        self.voice.say("Person detected")
                     else:
                         self._notify(f"{count} people detected", "info")
+                        self.voice.say(f"{count} people detected")
             elif count == 0 and self._known_people_count > 0:
                 if self._can_notify("people_gone"):
                     self._notify("No people in view", "info")
@@ -115,9 +228,12 @@ class AssistantBrain:
             for tag in new_tags:
                 if self._can_notify(f"scene_{tag}"):
                     self._notify(f"Scene: {tag}", "info", duration=4.0)
+                    self.voice.say(f"{tag} detected")
             self._last_scene_tags = tags
 
-    def _update_info_panel(self, perception: ScenePerception):
+    def _update_info_panel(self, perception: ScenePerception,
+                           tracked: list[TrackedObject] | None = None,
+                           hands: list[HandResult] | None = None):
         """Update the info panel with current context."""
         if self._info_panel is None:
             return
@@ -129,9 +245,20 @@ class AssistantBrain:
         if names:
             lines.append(("Objects", ", ".join(names[:4])))
 
+        # Tracking info
+        if tracked is not None:
+            lines.append(("Tracking", f"{len(tracked)} objects"))
+
         # People
         if perception.people_count > 0:
             lines.append(("People", str(perception.people_count)))
+
+        # Hands
+        if hands:
+            hand_info = ", ".join(
+                f"{h.handedness[0]}:{h.gesture.value}" for h in hands
+            )
+            lines.append(("Hands", hand_info))
 
         # Text
         if perception.has_text:
@@ -166,6 +293,10 @@ class AssistantBrain:
         """Push a notification from external code."""
         self._notify(message, level, duration)
 
+    def speak(self, text: str, priority: bool = False):
+        """Say something through the voice engine."""
+        self.voice.say(text, priority=priority)
+
     def toggle_widget(self, widget_type: type):
         """Toggle a widget on/off."""
         widget = self.renderer.get(widget_type)
@@ -181,3 +312,13 @@ class AssistantBrain:
         self._frame_count = 0
         if self._notifications:
             self._notifications.clear()
+        if self._tracker:
+            self._tracker.reset()
+        self._prev_tracked = []
+        self._last_gesture = Gesture.UNKNOWN
+
+    def shutdown(self):
+        """Clean up resources."""
+        self.voice.shutdown()
+        if self._hand_detector:
+            self._hand_detector.close()

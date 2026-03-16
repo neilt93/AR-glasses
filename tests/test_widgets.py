@@ -7,9 +7,12 @@ import numpy as np
 from src.hud.widgets import (
     Widget, ObjectLabels, StatusBar, SceneSummary, NotificationStack,
     InfoPanel, Crosshair, WidgetRenderer, Notification, class_color,
+    TrackedObjectLabels, HandSkeleton,
 )
 from src.perception.scene import ScenePerception
 from src.perception.detector import Detection
+from src.perception.tracker import TrackedObject
+from src.perception.hands import HandResult, Gesture
 
 
 def _frame(w=640, h=480):
@@ -203,3 +206,119 @@ class TestWidgetRenderer:
         r.add(sb)
         assert r.get(StatusBar) is sb
         assert r.get(InfoPanel) is None
+
+
+class TestTrackedObjectLabels:
+    def _tracked_context(self):
+        return {
+            "tracked_objects": [
+                TrackedObject(
+                    track_id=0, class_name="cup", class_id=41,
+                    bbox=(100, 100, 200, 200), confidence=0.9,
+                    frames_seen=5,
+                    smooth_bbox=(100.0, 100.0, 200.0, 200.0),
+                ),
+                TrackedObject(
+                    track_id=1, class_name="laptop", class_id=63,
+                    bbox=(300, 100, 500, 400), confidence=0.85,
+                    frames_seen=15,
+                    smooth_bbox=(300.0, 100.0, 500.0, 400.0),
+                ),
+            ]
+        }
+
+    def test_draws_without_error(self):
+        w = TrackedObjectLabels()
+        frame = _frame()
+        result = w.draw(frame, self._tracked_context())
+        assert result.shape == (480, 640, 3)
+
+    def test_empty_context(self):
+        w = TrackedObjectLabels()
+        frame = _frame()
+        result = w.draw(frame, {})
+        assert result is frame
+
+    def test_no_tracked_objects(self):
+        w = TrackedObjectLabels()
+        frame = _frame()
+        result = w.draw(frame, {"tracked_objects": []})
+        assert result is frame
+
+    def test_min_confidence_filter(self):
+        w = TrackedObjectLabels(min_confidence=0.95)
+        frame = _frame()
+        result = w.draw(frame, self._tracked_context())
+        assert result.shape == (480, 640, 3)
+
+    def test_show_id_false(self):
+        w = TrackedObjectLabels(show_id=False)
+        frame = _frame()
+        result = w.draw(frame, self._tracked_context())
+        assert result.shape == (480, 640, 3)
+
+    def test_no_smooth(self):
+        w = TrackedObjectLabels(use_smooth=False)
+        frame = _frame()
+        result = w.draw(frame, self._tracked_context())
+        assert result.shape == (480, 640, 3)
+
+
+class TestHandSkeleton:
+    def _hand_context(self):
+        lms = [(0.3 + i * 0.02, 0.3 + (i % 5) * 0.05, 0.0) for i in range(21)]
+        return {
+            "hands": [
+                HandResult(
+                    landmarks=lms,
+                    handedness="Right",
+                    confidence=0.9,
+                    gesture=Gesture.OPEN,
+                    bbox=(50, 50, 200, 300),
+                ),
+            ]
+        }
+
+    def test_draws_without_error(self):
+        w = HandSkeleton()
+        frame = _frame()
+        result = w.draw(frame, self._hand_context())
+        assert result.shape == (480, 640, 3)
+
+    def test_empty_context(self):
+        w = HandSkeleton()
+        frame = _frame()
+        result = w.draw(frame, {})
+        assert result is frame
+
+    def test_no_hands(self):
+        w = HandSkeleton()
+        frame = _frame()
+        result = w.draw(frame, {"hands": []})
+        assert result is frame
+
+    def test_no_gesture_label(self):
+        w = HandSkeleton(show_gesture=False)
+        frame = _frame()
+        result = w.draw(frame, self._hand_context())
+        assert result.shape == (480, 640, 3)
+
+    def test_no_landmarks(self):
+        w = HandSkeleton(show_landmarks=False)
+        frame = _frame()
+        result = w.draw(frame, self._hand_context())
+        assert result.shape == (480, 640, 3)
+
+    def test_unknown_gesture_no_label(self):
+        lms = [(0.5, 0.5, 0)] * 21
+        ctx = {
+            "hands": [HandResult(
+                landmarks=lms, handedness="Right",
+                confidence=0.9, gesture=Gesture.UNKNOWN,
+                bbox=(50, 50, 200, 300),
+            )]
+        }
+        w = HandSkeleton()
+        frame = _frame()
+        result = w.draw(frame, ctx)
+        assert result.shape == (480, 640, 3)

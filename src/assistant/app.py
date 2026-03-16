@@ -1,11 +1,15 @@
 """AR Smart Assistant — main application loop.
 
-Webcam → Scene Understanding → Assistant Brain → Widget HUD → Glasses Display
+Webcam → Scene Understanding → Object Tracking → Hand Detection
+    → Assistant Brain → Widget HUD → Voice Output → Glasses Display
 
 Usage:
     python -m src.assistant.app
     python -m src.assistant.app --glasses
     python -m src.assistant.app --model yolov8s --ocr
+    python -m src.assistant.app --voice            # enable spoken feedback
+    python -m src.assistant.app --hands            # enable hand tracking
+    python -m src.assistant.app --no-tracking      # disable object tracking
 """
 
 import argparse
@@ -20,7 +24,10 @@ import numpy as np
 
 from src.perception.scene import SceneUnderstanding
 from src.display.output import GlassesDisplay
-from src.hud.widgets import WidgetRenderer, ObjectLabels, Crosshair
+from src.hud.widgets import (
+    WidgetRenderer, ObjectLabels, Crosshair, TrackedObjectLabels,
+    HandSkeleton,
+)
 from src.assistant.brain import AssistantBrain
 
 
@@ -34,6 +41,12 @@ def main():
                         help="Output to AR glasses")
     parser.add_argument("--ocr", action="store_true",
                         help="Enable text detection")
+    parser.add_argument("--voice", "-v", action="store_true",
+                        help="Enable voice output (spoken notifications)")
+    parser.add_argument("--hands", action="store_true",
+                        help="Enable hand pose detection")
+    parser.add_argument("--no-tracking", action="store_true",
+                        help="Disable object tracking (use per-frame detection only)")
     parser.add_argument("--no-labels", action="store_true",
                         help="Hide object bounding boxes")
     parser.add_argument("--width", type=int, default=1280)
@@ -49,9 +62,18 @@ def main():
     )
 
     # ── Init brain + HUD ──────────────────────────────────────────────────
-    brain = AssistantBrain(notification_cooldown=10.0)
+    enable_tracking = not args.no_tracking
+    brain = AssistantBrain(
+        notification_cooldown=10.0,
+        enable_tracking=enable_tracking,
+        enable_hands=args.hands,
+        enable_voice=args.voice,
+    )
     if args.no_labels:
-        brain.toggle_widget(ObjectLabels)
+        if enable_tracking:
+            brain.toggle_widget(TrackedObjectLabels)
+        else:
+            brain.toggle_widget(ObjectLabels)
 
     # ── Init camera ───────────────────────────────────────────────────────
     cap = cv2.VideoCapture(args.camera)
@@ -73,9 +95,24 @@ def main():
         cv2.resizeWindow(window_name, args.width, args.height)
 
     # ── Welcome ───────────────────────────────────────────────────────────
-    brain.notify("AR Assistant ready", "info", duration=3.0)
-    print("[assistant] Running — press 'q' to quit, 'h' toggle labels, "
-          "'c' toggle crosshair, 'i' toggle info panel")
+    features = []
+    if enable_tracking:
+        features.append("tracking")
+    if args.hands:
+        features.append("hands")
+    if args.voice:
+        features.append("voice")
+    if args.ocr:
+        features.append("OCR")
+
+    feature_str = f" [{', '.join(features)}]" if features else ""
+    brain.notify(f"AR Assistant ready{feature_str}", "info", duration=3.0)
+    brain.speak("AR Assistant ready")
+
+    controls = "[q] quit  [h] labels  [c] crosshair  [i] info"
+    if args.hands:
+        controls += "  [k] hand skeleton"
+    print(f"[assistant] Running — {controls}")
 
     # ── Main loop ─────────────────────────────────────────────────────────
     fps_counter = 0
@@ -92,15 +129,11 @@ def main():
             # 1. Perceive
             perception = scene.perceive(frame)
 
-            # 2. Think
-            brain.think(perception)
+            # 2. Think (includes tracking + hand detection)
+            brain.think(perception, frame=frame)
 
             # 3. Render HUD
-            context = {
-                "perception": perception,
-                "fps": fps,
-                "mode": "assistant",
-            }
+            context = brain.get_render_context(perception, fps=fps)
             display = brain.renderer.render(frame, context)
 
             # 4. Output
@@ -122,14 +155,20 @@ def main():
             if key == ord("q"):
                 break
             elif key == ord("h"):
-                brain.toggle_widget(ObjectLabels)
+                if enable_tracking:
+                    brain.toggle_widget(TrackedObjectLabels)
+                else:
+                    brain.toggle_widget(ObjectLabels)
             elif key == ord("c"):
                 brain.toggle_widget(Crosshair)
             elif key == ord("i"):
                 from src.hud.widgets import InfoPanel
                 brain.toggle_widget(InfoPanel)
+            elif key == ord("k") and args.hands:
+                brain.toggle_widget(HandSkeleton)
 
     finally:
+        brain.shutdown()
         cap.release()
         if glasses is not None:
             glasses.close()

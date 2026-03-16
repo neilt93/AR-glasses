@@ -6,6 +6,12 @@ pyyaml>=6.0
 # Object detection (YOLO pretrained on COCO — 80 common object classes)
 ultralytics>=8.0.0
 
+# Optional: voice output (offline text-to-speech)
+# pyttsx3>=2.90
+
+# Optional: hand pose detection
+# mediapipe>=0.10.0
+
 # Optional: OCR for text detection in scene
 # pytesseract>=0.3.10
 

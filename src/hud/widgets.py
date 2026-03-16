@@ -5,6 +5,8 @@ knows how to draw itself. The WidgetRenderer composes widgets onto a frame.
 
 Widget types:
 - ObjectLabels: floating labels on detected objects
+- TrackedObjectLabels: labels with persistent track IDs and smooth animation
+- HandSkeleton: hand landmark skeleton overlay with gesture label
 - StatusBar: top bar with time, FPS, scene info
 - NotificationStack: temporary messages that fade out
 - InfoPanel: contextual info panel (pinned to a corner)
@@ -323,6 +325,116 @@ class Crosshair(Widget):
         cv2.line(frame, (cx + s // 3, cy), (cx + s, cy), self.color, 1)
         cv2.line(frame, (cx, cy - s), (cx, cy - s // 3), self.color, 1)
         cv2.line(frame, (cx, cy + s // 3), (cx, cy + s), self.color, 1)
+        return frame
+
+
+# ─── Tracked Object Labels ───────────────────────────────────────────────
+
+class TrackedObjectLabels(Widget):
+    """Draws bounding boxes with persistent track IDs and smooth animation."""
+
+    def __init__(self, show_confidence: bool = True, show_id: bool = True,
+                 min_confidence: float = 0.3, use_smooth: bool = True, **kwargs):
+        super().__init__(**kwargs)
+        self.show_confidence = show_confidence
+        self.show_id = show_id
+        self.min_confidence = min_confidence
+        self.use_smooth = use_smooth
+
+    def draw(self, frame: np.ndarray, context: dict) -> np.ndarray:
+        tracked = context.get("tracked_objects")
+        if not tracked:
+            return frame
+
+        for obj in tracked:
+            if obj.confidence < self.min_confidence:
+                continue
+
+            # Use smoothed bbox for stable rendering
+            if self.use_smooth:
+                x1, y1, x2, y2 = [int(v) for v in obj.smooth_bbox]
+            else:
+                x1, y1, x2, y2 = obj.bbox
+
+            color = class_color(obj.class_name)
+
+            # Thicker box for objects tracked for many frames
+            thickness = 2 if obj.frames_seen < 10 else 3
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+
+            # Build label
+            parts = []
+            if self.show_id:
+                parts.append(f"#{obj.track_id}")
+            parts.append(obj.class_name)
+            if self.show_confidence:
+                parts.append(f"{obj.confidence:.0%}")
+            label = " ".join(parts)
+
+            lw, lh = cv2.getTextSize(label, FONT, 0.5, 1)[0]
+            cv2.rectangle(frame, (x1, y1 - lh - 8), (x1 + lw + 4, y1), color, -1)
+            cv2.putText(frame, label, (x1 + 2, y1 - 4),
+                        FONT, 0.5, BLACK, 1, cv2.LINE_AA)
+
+        return frame
+
+
+# ─── Hand Skeleton ────────────────────────────────────────────────────────
+
+# MediaPipe hand connections for skeleton drawing
+HAND_CONNECTIONS = [
+    (0, 1), (1, 2), (2, 3), (3, 4),        # thumb
+    (0, 5), (5, 6), (6, 7), (7, 8),        # index
+    (0, 9), (9, 10), (10, 11), (11, 12),   # middle
+    (0, 13), (13, 14), (14, 15), (15, 16), # ring
+    (0, 17), (17, 18), (18, 19), (19, 20), # pinky
+    (5, 9), (9, 13), (13, 17),             # palm
+]
+
+
+class HandSkeleton(Widget):
+    """Draws hand landmark skeletons with gesture labels."""
+
+    def __init__(self, show_gesture: bool = True, show_landmarks: bool = True,
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.show_gesture = show_gesture
+        self.show_landmarks = show_landmarks
+
+    def draw(self, frame: np.ndarray, context: dict) -> np.ndarray:
+        hands = context.get("hands")
+        if not hands:
+            return frame
+
+        h, w = frame.shape[:2]
+
+        for hand in hands:
+            if not hand.landmarks:
+                continue
+
+            # Convert normalized landmarks to pixel coords
+            pts = [(int(lm[0] * w), int(lm[1] * h)) for lm in hand.landmarks]
+
+            # Draw connections
+            for i, j in HAND_CONNECTIONS:
+                if i < len(pts) and j < len(pts):
+                    cv2.line(frame, pts[i], pts[j], CYAN, 2, cv2.LINE_AA)
+
+            # Draw landmark points
+            if self.show_landmarks:
+                for k, pt in enumerate(pts):
+                    # Fingertips get larger dots
+                    radius = 5 if k in (4, 8, 12, 16, 20) else 3
+                    color = ACCENT if k in (4, 8, 12, 16, 20) else GREEN
+                    cv2.circle(frame, pt, radius, color, -1)
+
+            # Gesture label
+            if self.show_gesture and hand.gesture.value != "unknown":
+                label = f"{hand.handedness} {hand.gesture.value}"
+                x1, y1, _, _ = hand.bbox
+                cv2.putText(frame, label, (x1, max(y1 - 10, 20)),
+                            FONT_BOLD, 0.6, CYAN, 1, cv2.LINE_AA)
+
         return frame
 
 
