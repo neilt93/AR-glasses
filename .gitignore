@@ -14,8 +14,12 @@ env/
 # Data and models (large files)
 data/raw/
 data/processed/
+data/runs/*.json
+data/runs/*.jsonl
 models/*.pt
 models/*.onnx
+models/learned/*.json
+models/learned/*.pkl
 *.weights
 
 # Logs
@@ -40,3 +44,5 @@ Thumbs.db
 !data/samples/.gitkeep
 !logs/.gitkeep
 !models/.gitkeep
+!models/learned/.gitkeep
+!data/runs/.gitkeep

@@ -49,6 +49,17 @@ def main():
         action="store_true",
         help="Disable logging",
     )
+    parser.add_argument(
+        "--no-learning",
+        action="store_true",
+        help="Disable learning layers",
+    )
+    parser.add_argument(
+        "--user",
+        type=str,
+        default=None,
+        help="User ID for per-user learning",
+    )
     args = parser.parse_args()
 
     # Load config
@@ -66,6 +77,10 @@ def main():
         config.fullscreen = True
     if args.no_log:
         config.enable_logging = False
+    if args.no_learning:
+        config.enable_learning = False
+    if args.user:
+        config.user_id = args.user
 
     # Run
     pipeline = Pipeline(config)
