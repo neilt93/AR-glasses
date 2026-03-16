@@ -1,6 +1,8 @@
-# AR Assembly Copilot
+# AR Smart Assistant
 
-Real-time AR guidance system for servo bracket assembly tasks. Uses computer vision (YOLO) to detect objects, track task progress via FSM, and render live instructions on RayNeo Air 4 AR glasses.
+Smart AR assistant for RayNeo Air 4 Pro glasses. Goal: recreate Apple Vision Pro at a fraction of the cost. Hobbyist stage now, industry later.
+
+**V1 setup:** PC + webcam (input) → processing → RayNeo Air 4 Pro glasses (USB-C display output, 1920x1080)
 
 ## Quick Reference
 
@@ -11,59 +13,51 @@ pip install -r requirements.txt
 # Run tests
 python -m pytest tests/ -v
 
-# Run main app
+# ── Smart Assistant (main app) ──
+python -m src.assistant.app                  # webcam → screen
+python -m src.assistant.app --glasses        # webcam → AR glasses
+python -m src.assistant.app --model yolov8s  # more accurate model
+python -m src.assistant.app --ocr            # enable text detection
+
+# ── Display testing ──
+python scripts/test_glasses.py               # test pattern on glasses
+python scripts/test_scene.py                 # scene understanding demo
+
+# ── Assembly copilot (original app) ──
 python src/app.py --config configs/base.yaml --camera 0
-
-# Run demo (locked settings)
+python src/app.py --glasses                  # output to glasses
 python scripts/run_demo.py
-
-# Collect training data
-python scripts/collect_data.py --camera 0 --output data/raw
-
-# Train learning models from run data
-python scripts/train_models.py --runs-dir data/runs --model-dir models/learned
-
-# Replay a session log
-python scripts/replay_log.py --log logs/<session>.jsonl
 ```
 
-Runtime keys: `q` quit, `r` reset task, `s` mark success, `f` mark failure.
+Assistant keys: `q` quit, `h` toggle object labels, `c` toggle crosshair, `i` toggle info panel.
 
 ## Architecture
 
-Per-frame pipeline: **VideoCapture → ObjectDetector → SceneStateExtractor → TaskFSM/StepEstimator → InstructionEngine → LearningLayers → HUDRenderer → EventLogger**
-
-Each stage lives in its own `src/` submodule. `Pipeline` in `src/pipeline/orchestrator.py` ties them together.
+### Smart Assistant Pipeline
+**Webcam → SceneUnderstanding (YOLO COCO) → AssistantBrain → WidgetRenderer → GlassesDisplay**
 
 ### Key Modules
 
 | Module | Purpose |
 |--------|---------|
-| `src/perception/detector.py` | YOLO object detection (mock fallback when unavailable) |
-| `src/state/scene_state.py` | Spatial rules: overlap, proximity, containment |
-| `src/task/task_fsm.py` | 9-step FSM with debounced transitions |
-| `src/instructions/engine.py` | Template-based guidance + error detection |
-| `src/learning/` | 5-layer risk system: duration, transition, anomaly, failure, risk aggregator |
-| `src/hud/renderer.py` | OpenCV HUD overlay with color palettes |
-| `src/data/records.py` | RunRecord/FrameRecord dataclasses, RunStore persistence |
-| `src/event_log/events.py` | JSONL session logging |
+| `src/assistant/brain.py` | Decision layer: tracks scene, triggers notifications |
+| `src/assistant/app.py` | Main assistant entry point |
+| `src/perception/scene.py` | General scene understanding: YOLO 80-class + OCR + scene tags |
+| `src/perception/detector.py` | Assembly-specific YOLO detector (mock fallback) |
+| `src/hud/widgets.py` | Composable widget HUD: ObjectLabels, StatusBar, Notifications, InfoPanel, Crosshair |
+| `src/hud/renderer.py` | Legacy assembly-specific HUD |
+| `src/display/monitor.py` | Windows monitor detection, RayNeo auto-detect |
+| `src/display/output.py` | GlassesDisplay: fullscreen output on AR glasses |
+| `src/pipeline/orchestrator.py` | Assembly copilot pipeline (with --glasses support) |
+| `src/learning/` | 5-layer risk system (assembly-specific) |
 
 ## Code Conventions
 
 - **Python 3.10+** — uses `int | str` union syntax, walrus operator
 - **Dataclass-heavy** — all data structures use `@dataclass`
 - **PascalCase** classes, **snake_case** functions, **UPPER_SNAKE_CASE** constants, **`_prefix`** private attrs
-- **Config-driven** — `PipelineConfig` dataclass loaded from YAML (`configs/base.yaml`), CLI overrides
-- **No test suite currently** — validate changes by running the demo or replaying logs
-
-## Configuration
-
-- `configs/base.yaml` — all pipeline parameters with defaults
-- `configs/demo_config.yaml` — locked demo settings (fullscreen, higher thresholds)
-- `configs/detector.yaml` — model paths (optional)
-
-Key config areas: video (camera, FPS, resolution), detector (confidence, model path), FSM (persistence_frames, stall_threshold), display, logging, learning (enable, user_id, model_dir).
+- **179 tests** — `python -m pytest tests/ -v`
 
 ## Dependencies
 
-Core: `opencv-python`, `numpy`, `pyyaml`. Optional: `ultralytics` (YOLO), `scikit-learn` (failure classifier), `torch`/`torchvision` (training).
+Core: `opencv-python`, `numpy`, `pyyaml`, `ultralytics` (YOLOv8). Optional: `pytesseract` (OCR), `scikit-learn` (failure classifier).
