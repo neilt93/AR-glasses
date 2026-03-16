@@ -55,6 +55,16 @@ def main():
         help="Disable learning layers",
     )
     parser.add_argument(
+        "--glasses", "-g",
+        action="store_true",
+        help="Output to AR glasses (auto-detect RayNeo display)",
+    )
+    parser.add_argument(
+        "--glasses-debug",
+        action="store_true",
+        help="Print monitor detection info",
+    )
+    parser.add_argument(
         "--user",
         type=str,
         default=None,
@@ -81,6 +91,10 @@ def main():
         config.enable_learning = False
     if args.user:
         config.user_id = args.user
+    if args.glasses:
+        config.glasses_output = True
+    if args.glasses_debug:
+        config.glasses_debug = True
 
     # Run
     pipeline = Pipeline(config)

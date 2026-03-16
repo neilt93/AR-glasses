@@ -18,6 +18,7 @@ from src.state.scene_state import SceneStateExtractor
 from src.task.step_estimator import StepEstimator
 from src.instructions.engine import InstructionEngine
 from src.hud.renderer import HUDRenderer
+from src.display.output import GlassesDisplay
 from src.event_log.events import EventLogger
 from src.data.records import RunRecord, FrameRecord, RunStore
 from src.learning.duration_model import StepDurationModel
@@ -51,6 +52,8 @@ class PipelineConfig:
     fullscreen: bool = False
     window_name: str = "AR Assembly Copilot"
     show_detections: bool = True
+    glasses_output: bool = False  # render to AR glasses display
+    glasses_debug: bool = False   # print monitor detection info
 
     # Logging
     log_dir: str = "logs"
@@ -98,6 +101,12 @@ class Pipeline:
             task_name=self.config.task_name,
             show_detections=self.config.show_detections,
         )
+        self._glasses: Optional[GlassesDisplay] = None
+        if self.config.glasses_output:
+            self._glasses = GlassesDisplay(
+                window_name=self.config.window_name,
+                debug_mode=self.config.glasses_debug,
+            )
         self._logger: Optional[EventLogger] = None
 
         # Learning layers
@@ -150,7 +159,9 @@ class Pipeline:
             run_count = self._run_store.count()
             print(f"[pipeline] {run_count} prior runs in store")
 
-        if self.config.fullscreen:
+        if self._glasses is not None:
+            self._glasses.open()
+        elif self.config.fullscreen:
             cv2.namedWindow(self.config.window_name, cv2.WINDOW_NORMAL)
             cv2.setWindowProperty(
                 self.config.window_name,
@@ -293,7 +304,10 @@ class Pipeline:
                     )
 
                 # 10. Display
-                cv2.imshow(self.config.window_name, display)
+                if self._glasses is not None:
+                    self._glasses.show(display)
+                else:
+                    cv2.imshow(self.config.window_name, display)
 
                 # Handle keyboard
                 key = cv2.waitKey(1) & 0xFF
@@ -385,6 +399,8 @@ class Pipeline:
     def _cleanup(self):
         self._running = False
         self._capture.release()
+        if self._glasses is not None:
+            self._glasses.close()
         cv2.destroyAllWindows()
         if self._logger is not None:
             self._logger.flush()

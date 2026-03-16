@@ -1,0 +1,152 @@
+# Task definition: Servo Bracket Assembly
+# This file fully describes the assembly task — steps, transitions,
+# instructions, and warnings — so the FSM and instruction engine
+# can be configured from data instead of code.
+
+task_id: servo_bracket_assembly
+task_name: Servo Bracket Assembly
+description: >
+  Attach a servo bracket to a base plate using two screws.
+
+# Object classes the detector should recognize for this task
+object_classes:
+  - base_plate
+  - bracket
+  - screw
+  - screwdriver
+  - servo
+  - hand
+
+# Assembly steps in order. The FSM walks through these sequentially.
+# Step 0 (NOT_STARTED) and the final step (COMPLETED) are implicit.
+steps:
+  - id: 1
+    name: PLACE_BASE_PLATE
+    label: "Step 1: Place base plate"
+    instruction: "Place the base plate flat on the work surface."
+    next_hint: "Next: pick up the bracket."
+    transition:
+      # Conditions to advance FROM this step to the next.
+      # All conditions must be true (AND logic).
+      - field: base_plate_visible
+        op: "eq"
+        value: true
+
+  - id: 2
+    name: PICK_UP_BRACKET
+    label: "Step 2: Pick up bracket"
+    instruction: "Pick up the servo bracket from the parts area."
+    next_hint: "Next: align bracket to base plate."
+    transition:
+      - field: bracket_visible
+        op: "eq"
+        value: true
+      - field: hand_visible
+        op: "eq"
+        value: true
+
+  - id: 3
+    name: ALIGN_BRACKET
+    label: "Step 3: Align bracket"
+    instruction: "Align the bracket holes with the base plate holes."
+    next_hint: "Next: insert the first screw."
+    transition:
+      - field: bracket_on_plate
+        op: "eq"
+        value: true
+
+  - id: 4
+    name: INSERT_FIRST_SCREW
+    label: "Step 4: Insert first screw"
+    instruction: "Insert a screw through the first bracket hole."
+    next_hint: "Next: tighten with screwdriver."
+    transition:
+      - field: bracket_on_plate
+        op: "eq"
+        value: true
+      - field: screw_near_plate
+        op: "eq"
+        value: true
+      - field: screws_visible
+        op: "gte"
+        value: 1
+
+  - id: 5
+    name: TIGHTEN_FIRST_SCREW
+    label: "Step 5: Tighten first screw"
+    instruction: "Use the screwdriver to tighten the first screw."
+    next_hint: "Next: insert the second screw."
+    transition:
+      - field: bracket_on_plate
+        op: "eq"
+        value: true
+      - field: screwdriver_engaged
+        op: "eq"
+        value: true
+
+  - id: 6
+    name: INSERT_SECOND_SCREW
+    label: "Step 6: Insert second screw"
+    instruction: "Insert a screw through the second bracket hole."
+    next_hint: "Next: tighten the second screw."
+    transition:
+      - field: bracket_on_plate
+        op: "eq"
+        value: true
+      - field: screws_visible
+        op: "gte"
+        value: 2
+
+  - id: 7
+    name: TIGHTEN_SECOND_SCREW
+    label: "Step 7: Tighten second screw"
+    instruction: "Tighten the second screw with the screwdriver."
+    next_hint: "Next: verify the assembly."
+    transition:
+      - field: bracket_on_plate
+        op: "eq"
+        value: true
+      - field: screwdriver_engaged
+        op: "eq"
+        value: true
+      - field: screws_visible
+        op: "gte"
+        value: 2
+
+  - id: 8
+    name: VERIFY_ASSEMBLY
+    label: "Step 8: Verify assembly"
+    instruction: "Check that the bracket is firmly attached."
+    next_hint: "Almost done — verify and finish."
+    transition:
+      - field: bracket_on_plate
+        op: "eq"
+        value: true
+      - field: screws_visible
+        op: "gte"
+        value: 2
+      - field: screwdriver_engaged
+        op: "eq"
+        value: false
+
+# Warnings: checked each frame. Each warning has a condition
+# (which steps + scene state) and a message.
+warnings:
+  - id: bracket_not_on_plate
+    message: "Warning: bracket is not on the base plate."
+    steps: [4, 5, 6, 7]  # screw steps
+    condition:
+      - field: bracket_on_plate
+        op: "eq"
+        value: false
+
+  - id: missing_screwdriver
+    message: "Warning: screwdriver not detected."
+    steps: [5, 7]  # tightening steps
+    condition:
+      - field: screwdriver_visible
+        op: "eq"
+        value: false
+
+# Implicit entries (always available, handled by the engine):
+#   stalled: "Hint: no progress detected for a while."
