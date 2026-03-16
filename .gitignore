@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+venv/
+.venv/
+env/
+
+# Data and models (large files)
+data/raw/
+data/processed/
+models/*.pt
+models/*.onnx
+*.weights
+
+# Logs
+logs/*.jsonl
+logs/*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keep directory structure
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/labels/.gitkeep
+!data/samples/.gitkeep
+!logs/.gitkeep
+!models/.gitkeep

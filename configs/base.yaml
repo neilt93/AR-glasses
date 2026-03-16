@@ -1,0 +1,26 @@
+# Base configuration for the AR Assembly Copilot
+
+# Video capture
+camera_source: 0
+frame_width: 640
+frame_height: 480
+target_fps: 30
+
+# Object detection
+model_path: null  # null = use mock detector
+detection_confidence: 0.4
+detect_every_n: 1
+
+# Task FSM
+persistence_frames: 5
+stall_threshold: 150
+
+# Display
+task_name: "Servo Bracket Assembly"
+fullscreen: false
+window_name: "AR Assembly Copilot"
+show_detections: true
+
+# Logging
+log_dir: "logs"
+enable_logging: true

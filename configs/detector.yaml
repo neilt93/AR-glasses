@@ -1,0 +1,18 @@
+# Detector-specific configuration
+
+# Model
+model_path: "models/assembly_yolo.pt"
+confidence_threshold: 0.4
+
+# Classes (must match training labels)
+classes:
+  - base_plate
+  - bracket
+  - screw
+  - screwdriver
+  - servo
+  - hand
+
+# Inference
+input_size: 640
+detect_every_n: 1
