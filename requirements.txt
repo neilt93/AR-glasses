@@ -18,6 +18,6 @@ ultralytics>=8.0.0
 # Optional: failure classifier (Layer 4)
 # scikit-learn>=1.3.0
 
-# Optional: for future model training
+# Optional: depth estimation (MiDaS)
 # torch>=2.0.0
 # torchvision>=0.15.0

@@ -7,6 +7,7 @@ Widget types:
 - ObjectLabels: floating labels on detected objects
 - TrackedObjectLabels: labels with persistent track IDs and smooth animation
 - HandSkeleton: hand landmark skeleton overlay with gesture label
+- DepthOverlay: semi-transparent depth colormap overlay
 - StatusBar: top bar with time, FPS, scene info
 - NotificationStack: temporary messages that fade out
 - InfoPanel: contextual info panel (pinned to a corner)
@@ -435,6 +436,42 @@ class HandSkeleton(Widget):
                 cv2.putText(frame, label, (x1, max(y1 - 10, 20)),
                             FONT_BOLD, 0.6, CYAN, 1, cv2.LINE_AA)
 
+        return frame
+
+
+# ─── Depth Overlay ───────────────────────────────────────────────────────────
+
+class DepthOverlay(Widget):
+    """Semi-transparent depth colormap overlay.
+
+    Blends a colored depth visualization with the camera frame.
+    Useful for understanding spatial layout.
+    """
+
+    def __init__(self, alpha: float = 0.3, colormap: int = cv2.COLORMAP_INFERNO,
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.alpha = alpha
+        self.colormap = colormap
+
+    def draw(self, frame: np.ndarray, context: dict) -> np.ndarray:
+        depth_result = context.get("depth")
+        if depth_result is None:
+            return frame
+
+        depth_map = depth_result.depth_map
+        h, w = frame.shape[:2]
+
+        # Resize depth map to match frame if needed
+        if depth_map.shape[:2] != (h, w):
+            depth_map = cv2.resize(depth_map, (w, h))
+
+        # Convert to colormap
+        depth_uint8 = (depth_map * 255).astype(np.uint8)
+        colored = cv2.applyColorMap(depth_uint8, self.colormap)
+
+        # Blend with frame
+        cv2.addWeighted(colored, self.alpha, frame, 1.0 - self.alpha, 0, frame)
         return frame
 
 

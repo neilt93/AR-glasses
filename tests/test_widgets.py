@@ -7,12 +7,13 @@ import numpy as np
 from src.hud.widgets import (
     Widget, ObjectLabels, StatusBar, SceneSummary, NotificationStack,
     InfoPanel, Crosshair, WidgetRenderer, Notification, class_color,
-    TrackedObjectLabels, HandSkeleton,
+    TrackedObjectLabels, HandSkeleton, DepthOverlay,
 )
 from src.perception.scene import ScenePerception
 from src.perception.detector import Detection
 from src.perception.tracker import TrackedObject
 from src.perception.hands import HandResult, Gesture
+from src.perception.depth import DepthResult
 
 
 def _frame(w=640, h=480):
@@ -321,4 +322,41 @@ class TestHandSkeleton:
         w = HandSkeleton()
         frame = _frame()
         result = w.draw(frame, ctx)
+        assert result.shape == (480, 640, 3)
+
+
+class TestDepthOverlay:
+    def _depth_context(self):
+        depth = np.linspace(0, 1, 640, dtype=np.float32)
+        depth = np.tile(depth, (480, 1))
+        return {
+            "depth": DepthResult(depth_map=depth, raw_depth=depth.copy())
+        }
+
+    def test_draws_without_error(self):
+        w = DepthOverlay()
+        frame = _frame()
+        result = w.draw(frame, self._depth_context())
+        assert result.shape == (480, 640, 3)
+
+    def test_empty_context(self):
+        w = DepthOverlay()
+        frame = _frame()
+        result = w.draw(frame, {})
+        assert result is frame
+
+    def test_different_sized_depth_map(self):
+        """Depth map at different resolution should be resized."""
+        depth = np.linspace(0, 1, 320, dtype=np.float32)
+        depth = np.tile(depth, (240, 1))
+        ctx = {"depth": DepthResult(depth_map=depth, raw_depth=depth.copy())}
+        w = DepthOverlay()
+        frame = _frame()
+        result = w.draw(frame, ctx)
+        assert result.shape == (480, 640, 3)
+
+    def test_alpha_blend(self):
+        w = DepthOverlay(alpha=0.5)
+        frame = np.ones((480, 640, 3), dtype=np.uint8) * 128
+        result = w.draw(frame, self._depth_context())
         assert result.shape == (480, 640, 3)

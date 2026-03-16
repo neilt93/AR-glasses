@@ -9,6 +9,7 @@ Usage:
     python -m src.assistant.app --model yolov8s --ocr
     python -m src.assistant.app --voice            # enable spoken feedback
     python -m src.assistant.app --hands            # enable hand tracking
+    python -m src.assistant.app --depth            # enable depth estimation
     python -m src.assistant.app --no-tracking      # disable object tracking
 """
 
@@ -26,7 +27,7 @@ from src.perception.scene import SceneUnderstanding
 from src.display.output import GlassesDisplay
 from src.hud.widgets import (
     WidgetRenderer, ObjectLabels, Crosshair, TrackedObjectLabels,
-    HandSkeleton,
+    HandSkeleton, DepthOverlay,
 )
 from src.assistant.brain import AssistantBrain
 
@@ -45,6 +46,8 @@ def main():
                         help="Enable voice output (spoken notifications)")
     parser.add_argument("--hands", action="store_true",
                         help="Enable hand pose detection")
+    parser.add_argument("--depth", action="store_true",
+                        help="Enable depth estimation (requires torch)")
     parser.add_argument("--no-tracking", action="store_true",
                         help="Disable object tracking (use per-frame detection only)")
     parser.add_argument("--no-labels", action="store_true",
@@ -68,6 +71,7 @@ def main():
         enable_tracking=enable_tracking,
         enable_hands=args.hands,
         enable_voice=args.voice,
+        enable_depth=args.depth,
     )
     if args.no_labels:
         if enable_tracking:
@@ -100,6 +104,8 @@ def main():
         features.append("tracking")
     if args.hands:
         features.append("hands")
+    if args.depth:
+        features.append("depth")
     if args.voice:
         features.append("voice")
     if args.ocr:
@@ -112,6 +118,8 @@ def main():
     controls = "[q] quit  [h] labels  [c] crosshair  [i] info"
     if args.hands:
         controls += "  [k] hand skeleton"
+    if args.depth:
+        controls += "  [d] depth overlay"
     print(f"[assistant] Running — {controls}")
 
     # ── Main loop ─────────────────────────────────────────────────────────
@@ -166,6 +174,8 @@ def main():
                 brain.toggle_widget(InfoPanel)
             elif key == ord("k") and args.hands:
                 brain.toggle_widget(HandSkeleton)
+            elif key == ord("d") and args.depth:
+                brain.toggle_widget(DepthOverlay)
 
     finally:
         brain.shutdown()

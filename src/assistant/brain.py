@@ -12,6 +12,7 @@ Responsibilities:
 - Speak important events via voice output
 - Track objects with persistent IDs across frames
 - Detect hand gestures
+- Estimate depth for spatial reasoning
 """
 
 import time
@@ -20,11 +21,12 @@ from typing import Optional
 from src.perception.scene import ScenePerception
 from src.perception.tracker import ObjectTracker, TrackedObject
 from src.perception.hands import HandDetector, HandResult, Gesture
+from src.perception.depth import DepthEstimator, DepthResult
 from src.assistant.voice import VoiceEngine, MockVoiceEngine
 from src.hud.widgets import (
     NotificationStack, InfoPanel, WidgetRenderer, StatusBar,
     ObjectLabels, SceneSummary, Crosshair, TrackedObjectLabels,
-    HandSkeleton,
+    HandSkeleton, DepthOverlay,
 )
 
 
@@ -44,11 +46,13 @@ class AssistantBrain:
         enable_tracking: bool = True,
         enable_hands: bool = False,
         enable_voice: bool = False,
+        enable_depth: bool = False,
     ):
         # Widgets
         self.renderer = renderer or self._default_renderer(
             use_tracking=enable_tracking,
             use_hands=enable_hands,
+            use_depth=enable_depth,
         )
         self._notifications = self.renderer.get(NotificationStack)
         self._info_panel = self.renderer.get(InfoPanel)
@@ -71,6 +75,10 @@ class AssistantBrain:
         self._last_gesture: Gesture = Gesture.UNKNOWN
         self._enable_hands = enable_hands
 
+        # Depth estimator
+        self._depth_estimator = DepthEstimator() if enable_depth else None
+        self._enable_depth = enable_depth
+
         # Tracking state
         self._known_objects: set[str] = set()
         self._known_people_count: int = 0
@@ -82,7 +90,8 @@ class AssistantBrain:
         self._last_dominant: list[str] = []
 
     def _default_renderer(self, use_tracking: bool = False,
-                          use_hands: bool = False) -> WidgetRenderer:
+                          use_hands: bool = False,
+                          use_depth: bool = False) -> WidgetRenderer:
         """Build the default HUD widget stack."""
         renderer = WidgetRenderer()
 
@@ -91,6 +100,10 @@ class AssistantBrain:
             renderer.add(TrackedObjectLabels(z_order=0))
         else:
             renderer.add(ObjectLabels(z_order=0))
+
+        # Depth overlay (drawn early, below everything else)
+        if use_depth:
+            renderer.add(DepthOverlay(z_order=-1, enabled=False))
 
         renderer.add(Crosshair(z_order=1, enabled=False))
 
@@ -126,15 +139,21 @@ class AssistantBrain:
             hands = self._hand_detector.detect(frame)
             self._check_gestures(hands)
 
+        # Depth estimation
+        depth = None
+        if self._depth_estimator is not None and frame is not None:
+            depth = self._depth_estimator.estimate(frame)
+
         # Standard brain logic
         self._check_new_objects(perception)
         self._check_people(perception)
         self._check_scene_change(perception)
-        self._update_info_panel(perception, tracked, hands)
+        self._update_info_panel(perception, tracked, hands, depth)
 
         # Store extra context for widgets
         self._last_tracked = tracked
         self._last_hands = hands
+        self._last_depth = depth
 
     def get_render_context(self, perception: ScenePerception,
                            fps: float = 0.0, mode: str = "assistant") -> dict:
@@ -148,6 +167,8 @@ class AssistantBrain:
             ctx["tracked_objects"] = self._last_tracked
         if hasattr(self, '_last_hands') and self._last_hands is not None:
             ctx["hands"] = self._last_hands
+        if hasattr(self, '_last_depth') and self._last_depth is not None:
+            ctx["depth"] = self._last_depth
         return ctx
 
     def _check_track_events(self, tracked: list[TrackedObject]):
@@ -233,7 +254,8 @@ class AssistantBrain:
 
     def _update_info_panel(self, perception: ScenePerception,
                            tracked: list[TrackedObject] | None = None,
-                           hands: list[HandResult] | None = None):
+                           hands: list[HandResult] | None = None,
+                           depth: DepthResult | None = None):
         """Update the info panel with current context."""
         if self._info_panel is None:
             return
@@ -264,6 +286,16 @@ class AssistantBrain:
         if perception.has_text:
             text_preview = perception.all_text[:25]
             lines.append(("Text", f'"{text_preview}"'))
+
+        # Depth — show nearest object
+        if depth is not None and perception.objects:
+            sorted_objs = depth.objects_by_depth(
+                [d.bbox for d in perception.objects],
+                [d.class_name for d in perception.objects],
+            )
+            if sorted_objs:
+                nearest = sorted_objs[0]
+                lines.append(("Nearest", f"{nearest[0]} ({nearest[1]:.0%})"))
 
         # Scene
         if perception.scene_tags:
@@ -322,3 +354,5 @@ class AssistantBrain:
         self.voice.shutdown()
         if self._hand_detector:
             self._hand_detector.close()
+        if self._depth_estimator:
+            self._depth_estimator.close()
