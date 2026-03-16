@@ -38,14 +38,16 @@ Assistant keys: `q` quit, `h` labels, `c` crosshair, `i` info, `k` hands, `d` de
 ## Architecture
 
 ### Smart Assistant Pipeline
-**Webcam → SceneUnderstanding (YOLO COCO) → ObjectTracker → HandDetector → AssistantBrain → WidgetRenderer → VoiceEngine → GlassesDisplay**
+**Webcam → SceneUnderstanding (YOLO) → ObjectTracker → HandDetector → DepthEstimator → AssistantBrain (SpatialAnalyzer + SuggestionEngine) → WidgetRenderer → VoiceEngine → GlassesDisplay**
 
 ### Key Modules
 
 | Module | Purpose |
 |--------|---------|
-| `src/assistant/brain.py` | Decision layer: tracks scene, triggers notifications + voice |
+| `src/assistant/brain.py` | Decision layer: tracks scene, triggers notifications + voice + suggestions |
 | `src/assistant/voice.py` | Async TTS engine (pyttsx3, background thread, dedup) |
+| `src/assistant/spatial.py` | Spatial relationships: near, on top, inside, holding, left/right |
+| `src/assistant/suggestions.py` | Proactive tips: focus mode, low light, leaving workspace, coffee cooling |
 | `src/assistant/app.py` | Main assistant entry point |
 | `src/perception/scene.py` | General scene understanding: YOLO 80-class + OCR + scene tags |
 | `src/perception/tracker.py` | Object tracker: persistent IDs, IoU+centroid matching, smooth bbox |
@@ -64,7 +66,7 @@ Assistant keys: `q` quit, `h` labels, `c` crosshair, `i` info, `k` hands, `d` de
 - **Python 3.10+** — uses `int | str` union syntax, walrus operator
 - **Dataclass-heavy** — all data structures use `@dataclass`
 - **PascalCase** classes, **snake_case** functions, **UPPER_SNAKE_CASE** constants, **`_prefix`** private attrs
-- **263 tests** — `python -m pytest tests/ -v`
+- **290 tests** — `python -m pytest tests/ -v`
 
 ## Dependencies
 
